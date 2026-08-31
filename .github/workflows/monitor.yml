@@ -1,6 +1,10 @@
 name: Gymnathlon Checker
 
 on:
+  push:
+    branches:
+      - main
+
   schedule:
     - cron: '*/5 * * * *'
 
