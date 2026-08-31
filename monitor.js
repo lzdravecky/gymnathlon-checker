@@ -115,6 +115,29 @@ function parseCourses(html) {
 
 
 // ========================================
+// DETEKCIA VOĽNÉHO MIESTA
+// ========================================
+
+function isAvailable(course) {
+
+    const status = course.status
+        .toLowerCase()
+        .trim();
+
+    const statusClass = course.statusClass
+        .toLowerCase();
+
+    return (
+        statusClass.includes('occupancy-indicator-available') ||
+        statusClass.includes('occupancy-indicator-last') ||
+        status.includes('voľné miesta') ||
+        status.includes('voľné miesto') ||
+        status.includes('posledné miesto')
+    );
+}
+
+
+// ========================================
 // EMAIL
 // ========================================
 
@@ -129,10 +152,7 @@ Nepodarilo sa nájsť žiadne Baby kurzy.
         `.trim();
     }
 
-    const availableCourses = courses.filter(course =>
-        course.statusClass.includes('occupancy-indicator-available') ||
-        course.statusClass.includes('occupancy-indicator-last')
-    );
+    const availableCourses = courses.filter(isAvailable);
 
     let result = 'Gymnathlon Checker\n\n';
 
@@ -284,10 +304,7 @@ async function main() {
 
         console.log('');
 
-        let availableCourses = courses.filter(course =>
-            course.statusClass.includes('occupancy-indicator-available') ||
-            course.statusClass.includes('occupancy-indicator-last')
-        );
+        let availableCourses = courses.filter(isAvailable);
 
 
         // ========================================
