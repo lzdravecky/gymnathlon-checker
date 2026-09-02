@@ -22,6 +22,11 @@ const TEST_MODE = false;
 // false → používa skutočný stav z Gymnathlonu
 const SIMULATE_AVAILABLE = false;
 
+// DAILY REPORT
+// true  → pošle aktuálny stav všetkých kurzov a skončí
+// false → normálny checker režim
+const DAILY_REPORT_MODE = process.argv.includes('--daily-report');
+
 const EMAIL_TO = 'lukas.zdravecky@gmail.com';
 
 
@@ -284,6 +289,32 @@ async function main() {
     try {
 
         const courses = await getCourses();
+
+
+        // ========================================
+        // DAILY REPORT
+        // ========================================
+
+        if (DAILY_REPORT_MODE) {
+
+            console.log(
+                '🕘 DAILY REPORT – posielam aktuálny stav kurzov.'
+            );
+
+            const emailBody = createEmailResult(courses);
+
+            await sendEmail(
+                'Gymnathlon Checker - Denný report',
+                emailBody
+            );
+
+            return;
+        }
+
+
+        // ========================================
+        // VÝPIS KURZOV
+        // ========================================
 
         console.log('NÁJDENÉ BABY KURZY:');
         console.log('----------------------------------------');
