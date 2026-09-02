@@ -313,7 +313,9 @@ async function main() {
 
         if (SIMULATE_AVAILABLE && courses.length > 0) {
 
-            console.log('🧪 SIMULÁCIA: prvý kurz je dočasne označený ako voľný.');
+            console.log(
+                '🧪 SIMULÁCIA: prvý kurz je dočasne označený ako voľný.'
+            );
 
             availableCourses.push(courses[0]);
         }
@@ -345,11 +347,13 @@ async function main() {
         const state = loadState();
 
 
+        // ID všetkých kurzov, ktoré sú AKTUÁLNE voľné
         const availableCourseIds = availableCourses.map(course =>
             course.id || `${course.location}|${course.term}`
         );
 
 
+        // Z nich vyberieme iba tie, ktoré ešte neboli nahlásené
         const newAvailableCourses = availableCourses.filter(course => {
 
             const courseId =
@@ -359,9 +363,15 @@ async function main() {
         });
 
 
+        // ========================================
+        // NOVÉ VOĽNÉ MIESTA
+        // ========================================
+
         if (newAvailableCourses.length > 0) {
 
-            console.log('🚨 NOVÉ VOĽNÉ MIESTO – odosielam alert!');
+            console.log(
+                '🚨 NOVÉ VOĽNÉ MIESTO – odosielam alert!'
+            );
 
             const emailBody = createEmailResult(courses);
 
@@ -370,7 +380,14 @@ async function main() {
                 emailBody
             );
 
-
+            /*
+             * DÔLEŽITÉ:
+             *
+             * State nastavíme na AKTUÁLNE voľné kurzy.
+             *
+             * Tým sa automaticky odstránia kurzy,
+             * ktoré sa medzičasom zaplnili.
+             */
             state.alertedCourses = availableCourseIds;
 
             saveState(state);
@@ -380,12 +397,45 @@ async function main() {
         } else if (availableCourses.length > 0) {
 
             console.log('Voľné miesto stále existuje.');
+
+            /*
+             * Aj keď neposielame email, musíme state
+             * synchronizovať s aktuálnym stavom.
+             *
+             * Ak sa napríklad:
+             *
+             * 597 = stále voľný
+             * 600 = medzičasom sa zaplnil
+             *
+             * state sa zmení z:
+             *
+             * ["597", "600"]
+             *
+             * na:
+             *
+             * ["597"]
+             *
+             * Tým sa 600 môže neskôr znovu nahlásiť.
+             */
+            state.alertedCourses = availableCourseIds;
+
+            saveState(state);
+
+            console.log('💾 Stav synchronizovaný.');
             console.log('Email sa neposiela – už bolo nahlásené.');
 
         } else {
 
             console.log('Všetky kurzy sú obsadené.');
 
+            /*
+             * Žiadny kurz už nie je voľný.
+             *
+             * Preto vymažeme všetky ID zo state.
+             *
+             * Ak sa niektorý kurz neskôr uvoľní,
+             * bude opäť považovaný za NOVÉ voľné miesto.
+             */
             if (state.alertedCourses.length > 0) {
 
                 state.alertedCourses = [];
@@ -410,4 +460,3 @@ async function main() {
 
 
 main();
-
