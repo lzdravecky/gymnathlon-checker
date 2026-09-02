@@ -12,7 +12,7 @@ on:
   workflow_dispatch:
     inputs:
       daily_report:
-        description: 'Poslať denný report'
+        description: 'Send Daily report'
         required: false
         default: false
         type: boolean
