@@ -4,11 +4,18 @@ on:
   push:
     branches:
       - main
-  #GitHub Scheduled Workflow
-  #schedule:
-   # - cron: '7,22,37,52 * * * *'
+
+  # GitHub Scheduled Workflow
+  # schedule:
+  #   - cron: '7,22,37,52 * * * *'
 
   workflow_dispatch:
+    inputs:
+      daily_report:
+        description: 'Poslať denný report'
+        required: false
+        default: false
+        type: boolean
 
 jobs:
   check-gymnathlon:
@@ -38,7 +45,12 @@ jobs:
           echo '${{ secrets.GMAIL_TOKEN }}' > token.json
 
       - name: Run Gymnathlon checker
-        run: node monitor.js
+        run: |
+          if [ "${{ inputs.daily_report }}" = "true" ]; then
+            node monitor.js --daily-report
+          else
+            node monitor.js
+          fi
 
       - name: Save state
         run: |
