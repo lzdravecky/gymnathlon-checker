@@ -1,6 +1,6 @@
 name: Gymnathlon Checker
 
-run-name: ${{ inputs.daily_report == true && 'Gymnathlon Checker — Daily Report' || 'Gymnathlon Checker — Checker' }}
+run-name: ${{ inputs.daily_report == true && 'Gymnathlon — Daily Report' || 'Gymnathlon — Checker' }}
 
 on:
   push:
