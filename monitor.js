@@ -304,7 +304,7 @@ async function main() {
             const emailBody = createEmailResult(courses);
 
             await sendEmail(
-                'Gymnathlon Checker - Denný report',
+                'Gymnathlon Checker - Daily report',
                 emailBody
             );
 
