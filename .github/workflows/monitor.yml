@@ -1,5 +1,7 @@
 name: Gymnathlon Checker
 
+run-name: ${{ inputs.daily_report == true && 'Gymnathlon Checker — Daily Report' || 'Gymnathlon Checker — Checker' }}
+
 on:
   push:
     branches:
@@ -19,8 +21,6 @@ on:
 
 jobs:
   check-gymnathlon:
-
-    name: ${{ inputs.daily_report == true && 'Daily Report' || 'Checker' }}
 
     runs-on: ubuntu-latest
 
