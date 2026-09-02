@@ -20,6 +20,8 @@ on:
 jobs:
   check-gymnathlon:
 
+    name: ${{ inputs.daily_report == true && 'Daily Report' || 'Checker' }}
+
     runs-on: ubuntu-latest
 
     permissions:
