@@ -3,9 +3,9 @@ name: Gymnathlon Checker
 run-name: ${{ inputs.daily_report == true && 'Gymnathlon — Daily Report' || 'Gymnathlon — Checker' }}
 
 on:
-  push:
-    branches:
-      - main
+  #push:
+  #  branches:
+  #    - main
 
   # GitHub Scheduled Workflow
   # schedule:
