@@ -38,4 +38,6 @@ jobs:
         with:
           context: .
           push: true
-          tags: ghcr.io/lzdravecky/gymnathlon-checker:1.0
+          tags: |
+            ghcr.io/lzdravecky/gymnathlon-checker:1.0
+            ghcr.io/lzdravecky/gymnathlon-checker:${{ github.sha }}
