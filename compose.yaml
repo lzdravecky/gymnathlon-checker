@@ -1,0 +1,9 @@
+services:
+  checker:
+    build: .
+    image: ghcr.io/lzdravecky/gymnathlon-checker:1.0
+
+    volumes:
+      - ./credentials.json:/app/credentials.json:ro
+      - ./token.json:/app/token.json:ro
+      - ./state.json:/app/state.json
