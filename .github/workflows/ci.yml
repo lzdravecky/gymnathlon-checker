@@ -63,8 +63,22 @@ jobs:
       - name: Create Lambda package
         run: zip -r gymnathlon-lambda.zip monitor.js package.json package-lock.json node_modules 
         
-      - name: Deploy Lambda
+      - name: Deploy Lambda and publish version
+        id: deploy
         run: |
-          aws lambda update-function-code \
+          VERSION=$(aws lambda update-function-code \
             --function-name gymnathlon-checker \
-            --zip-file fileb://gymnathlon-lambda.zip  
+            --zip-file fileb://gymnathlon-lambda.zip \
+            --publish \
+            --query 'Version' \
+            --output text)
+
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Published Lambda version: $VERSION"
+
+      - name: Update production alias
+        run: |
+          aws lambda update-alias \
+            --function-name gymnathlon-checker \
+            --name prod \
+            --function-version "${{ steps.deploy.outputs.version }}" 
