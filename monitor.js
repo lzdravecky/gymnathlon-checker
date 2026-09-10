@@ -1,13 +1,35 @@
 const cheerio = require('cheerio');
-const { google } = require('googleapis');
-const fs = require('fs');
+const { OAuth2Client } = require('google-auth-library');
+
+const {
+    SecretsManagerClient,
+    GetSecretValueCommand
+} = require('@aws-sdk/client-secrets-manager');
+
+const {
+    DynamoDBClient
+} = require('@aws-sdk/client-dynamodb');
+
+const {
+    DynamoDBDocumentClient,
+    GetCommand,
+    PutCommand
+} = require('@aws-sdk/lib-dynamodb');
+
+
+const secretsClient = new SecretsManagerClient({
+    region: 'eu-central-1'
+});
+
+const dynamoClient = new DynamoDBClient({
+    region: 'eu-central-1'
+});
+
+const dynamo = DynamoDBDocumentClient.from(dynamoClient);
+
 
 const URL =
     'https://www.gymnathlon.sk/kurzy/vyber/filter?gps-entity=kosice-i&gps-source=city&program%5B0%5D=baby&show-occupied=1';
-
-const TOKEN_PATH = 'token.json';
-const CREDENTIALS_PATH = 'credentials.json';
-const STATE_PATH = 'state.json';
 
 // ========================================
 // NASTAVENIA
@@ -192,27 +214,42 @@ Nepodarilo sa nájsť žiadne Baby kurzy.
 // STATE
 // ========================================
 
-function loadState() {
+async function loadState() {
 
-    if (!fs.existsSync(STATE_PATH)) {
+    const command = new GetCommand({
+        TableName: 'gymnathlon-state',
+        Key: {
+            id: 'checker-state'
+        }
+    });
+
+    const response = await dynamo.send(command);
+
+    if (!response.Item) {
 
         return {
             alertedCourses: []
         };
     }
 
-    return JSON.parse(
-        fs.readFileSync(STATE_PATH, 'utf8')
-    );
+    return {
+        alertedCourses: response.Item.alertedCourses || []
+    };
 }
 
 
-function saveState(state) {
+async function saveState(state) {
 
-    fs.writeFileSync(
-        STATE_PATH,
-        JSON.stringify(state, null, 2)
-    );
+    const command = new PutCommand({
+        TableName: 'gymnathlon-state',
+
+        Item: {
+            id: 'checker-state',
+            alertedCourses: state.alertedCourses
+        }
+    });
+
+    await dynamo.send(command);
 }
 
 
@@ -222,21 +259,24 @@ function saveState(state) {
 
 async function authorizeGmail() {
 
-    const credentials = JSON.parse(
-        fs.readFileSync(CREDENTIALS_PATH, 'utf8')
-    );
+    const command = new GetSecretValueCommand({
+        SecretId: 'gymnathlon/gmail'
+    });
+
+    const response = await secretsClient.send(command);
+
+    const secret = JSON.parse(response.SecretString);
+
+    const credentials = JSON.parse(secret.credentials);
+    const token = JSON.parse(secret.token);
 
     const { client_secret, client_id, redirect_uris } =
         credentials.installed || credentials.web;
 
-    const oAuth2Client = new google.auth.OAuth2(
+    const oAuth2Client = new OAuth2Client(
         client_id,
         client_secret,
         redirect_uris[0]
-    );
-
-    const token = JSON.parse(
-        fs.readFileSync(TOKEN_PATH, 'utf8')
     );
 
     oAuth2Client.setCredentials(token);
@@ -249,10 +289,12 @@ async function sendEmail(subject, body) {
 
     const auth = await authorizeGmail();
 
-    const gmail = google.gmail({
-        version: 'v1',
-        auth,
-    });
+    const accessTokenResponse = await auth.getAccessToken();
+    const accessToken = accessTokenResponse.token;
+
+    if (!accessToken) {
+        throw new Error('Nepodarilo sa ziskat Gmail access token.');
+    }
 
     const message = [
         'From: me',
@@ -264,17 +306,32 @@ async function sendEmail(subject, body) {
     ].join('\n');
 
     const encodedMessage = Buffer.from(message)
-        .toString('base64')
-        .replace(/\+/g, '-')
-        .replace(/\//g, '_')
-        .replace(/=+$/, '');
+        .toString('base64url');
 
-    await gmail.users.messages.send({
-        userId: 'me',
-        requestBody: {
-            raw: encodedMessage,
-        },
-    });
+    const response = await fetch(
+        'https://gmail.googleapis.com/gmail/v1/users/me/messages/send',
+        {
+            method: 'POST',
+
+            headers: {
+                Authorization: `Bearer ${accessToken}`,
+                'Content-Type': 'application/json',
+            },
+
+            body: JSON.stringify({
+                raw: encodedMessage,
+            }),
+        }
+    );
+
+    if (!response.ok) {
+
+        const errorBody = await response.text();
+
+        throw new Error(
+            `Gmail API chyba ${response.status}: ${errorBody}`
+        );
+    }
 
     console.log('✅ Email bol odoslaný!');
 }
@@ -284,7 +341,7 @@ async function sendEmail(subject, body) {
 // MAIN
 // ========================================
 
-async function main() {
+async function main(dailyReportMode = DAILY_REPORT_MODE) {
 
     try {
 
@@ -295,7 +352,7 @@ async function main() {
         // DAILY REPORT
         // ========================================
 
-        if (DAILY_REPORT_MODE) {
+        if (dailyReportMode) {
 
             console.log(
                 '🕘 DAILY REPORT – posielam aktuálny stav kurzov.'
@@ -375,7 +432,7 @@ async function main() {
         // OSTRÝ REŽIM + STATE
         // ========================================
 
-        const state = loadState();
+        const state = await loadState();
 
 
         // ID všetkých kurzov, ktoré sú AKTUÁLNE voľné
@@ -421,7 +478,7 @@ async function main() {
              */
             state.alertedCourses = availableCourseIds;
 
-            saveState(state);
+            await saveState(state);
 
             console.log('💾 Stav uložený.');
 
@@ -485,7 +542,7 @@ async function main() {
         console.error('CHYBA:');
         console.error(error);
 
-        process.exitCode = 1;
+        throw error;
     }
 }
 
@@ -494,7 +551,31 @@ if (require.main === module) {
     main();
 }
 
+async function handler(event = {}) {
+    const dailyReportMode = event.dailyReport === true;
+
+    console.log(JSON.stringify({
+        event: 'checker_started',
+        mode: dailyReportMode ? 'daily-report' : 'checker',
+        timestamp: new Date().toISOString()
+    }));
+
+    await main(dailyReportMode);
+
+    console.log(JSON.stringify({
+        event: 'checker_finished',
+        mode: dailyReportMode ? 'daily-report' : 'checker',
+        timestamp: new Date().toISOString()
+    }));
+
+    return {
+        statusCode: 200,
+        body: 'Gymnathlon checker finished'
+    };
+}
+
 module.exports = {
     parseCourses,
-    isAvailable
+    isAvailable,
+    handler
 };

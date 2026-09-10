@@ -12,8 +12,11 @@
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
+    "@aws-sdk/client-dynamodb": "^3.1127.0",
+    "@aws-sdk/client-secrets-manager": "^3.1127.0",
+    "@aws-sdk/lib-dynamodb": "^3.1127.0",
     "cheerio": "^1.2.0",
-    "googleapis": "^178.0.0",
+    "google-auth-library": "^11.0.2",
     "nodemailer": "^9.1.1"
   },
   "devDependencies": {

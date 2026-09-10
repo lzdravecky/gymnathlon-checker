@@ -2,3 +2,5 @@ node_modules/
 credentials.json
 token.json
 state.json
+lambda-package/
+gymnathlon-lambda.zip 
