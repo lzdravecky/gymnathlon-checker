@@ -4,3 +4,7 @@ token.json
 state.json
 lambda-package/
 gymnathlon-lambda.zip 
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
