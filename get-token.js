@@ -1,4 +1,4 @@
-const { google } = require('googleapis');
+const { OAuth2Client } = require('google-auth-library');
 const fs = require('fs');
 const readline = require('readline');
 
@@ -18,7 +18,7 @@ async function main() {
     const { client_id, client_secret, redirect_uris } =
         credentials.installed;
 
-    const oAuth2Client = new google.auth.OAuth2(
+    const oAuth2Client = new OAuth2Client(
         client_id,
         client_secret,
         redirect_uris[0]
