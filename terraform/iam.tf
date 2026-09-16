@@ -242,6 +242,7 @@ resource "aws_iam_role_policy" "terraform_plan_read" {
       {
         Action = [
           "cloudwatch:DescribeAlarms",
+          "cloudwatch:ListTagsForResource",
         ]
         Effect   = "Allow"
         Resource = "*"
