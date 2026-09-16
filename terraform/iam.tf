@@ -194,6 +194,7 @@ resource "aws_iam_role_policy" "terraform_plan_read" {
           "lambda:GetPolicy",
           "lambda:ListTags",
           "lambda:ListVersionsByFunction",
+          "lambda:GetFunctionCodeSigningConfig",
         ]
         Effect   = "Allow"
         Resource = "*"
