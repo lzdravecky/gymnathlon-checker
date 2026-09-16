@@ -118,3 +118,149 @@ resource "aws_iam_role_policy" "github_deploy" {
     ]
   })
 }
+
+resource "aws_iam_role" "terraform_ci" {
+  name = "terraform-ci"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+
+        Principal = {
+          Federated = aws_iam_openid_connect_provider.github.arn
+        }
+
+        Action = "sts:AssumeRoleWithWebIdentity"
+
+        Condition = {
+          StringEquals = {
+            "token.actions.githubusercontent.com:sub" = "repo:lzdravecky@163843980/gymnathlon-checker@1352277444:ref:refs/heads/main"
+            "token.actions.githubusercontent.com:aud" = "sts.amazonaws.com"
+          }
+        }
+      },
+    ]
+  })
+}
+
+resource "aws_iam_role_policy" "s3_backend_operations" {
+  name = "s3-backend-operations"
+  role = aws_iam_role.terraform_ci.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        "Effect" : "Allow",
+        "Action" : "s3:ListBucket",
+        "Resource" : "arn:aws:s3:::gymnathlon-terraform-state-15963",
+        "Condition" : {
+          "StringEquals" : {
+            "s3:prefix" : "gymnathlon-checker/terraform.tfstate"
+          }
+        }
+      },
+      {
+        "Effect" : "Allow",
+        "Action" : ["s3:GetObject", "s3:PutObject"],
+        "Resource" : [
+          "arn:aws:s3:::gymnathlon-terraform-state-15963/gymnathlon-checker/terraform.tfstate"
+        ]
+      },
+      {
+        "Effect" : "Allow",
+        "Action" : ["s3:GetObject", "s3:PutObject", "s3:DeleteObject"],
+        "Resource" : [
+          "arn:aws:s3:::gymnathlon-terraform-state-15963/gymnathlon-checker/terraform.tfstate.tflock"
+        ]
+      },
+    ]
+  })
+}
+
+resource "aws_iam_role_policy" "terraform_plan_read" {
+  name = "terraform-plan-read"
+  role = aws_iam_role.terraform_ci.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = [
+          "lambda:GetFunction",
+          "lambda:GetFunctionConfiguration",
+          "lambda:GetPolicy",
+          "lambda:ListTags",
+        ]
+        Effect   = "Allow"
+        Resource = "*"
+      },
+      {
+        Action = [
+          "dynamodb:DescribeTable",
+          "dynamodb:DescribeContinuousBackups",
+          "dynamodb:DescribeTimeToLive",
+          "dynamodb:ListTagsOfResource",
+        ]
+        Effect   = "Allow"
+        Resource = "*"
+      },
+      {
+        Action = [
+          "iam:GetRole",
+          "iam:GetRolePolicy",
+          "iam:GetPolicy",
+          "iam:GetPolicyVersion",
+          "iam:ListRolePolicies",
+          "iam:ListAttachedRolePolicies",
+          "iam:ListPolicyVersions",
+          "iam:GetOpenIDConnectProvider",
+          "iam:ListOpenIDConnectProviderTags",
+        ]
+        Effect   = "Allow"
+        Resource = "*"
+      },
+      {
+        Action = [
+          "scheduler:GetSchedule",
+        ]
+        Effect   = "Allow"
+        Resource = "*"
+      },
+      {
+        Action = [
+          "secretsmanager:DescribeSecret",
+        ]
+        Effect   = "Allow"
+        Resource = "*"
+      },
+      {
+        Action = [
+          "cloudwatch:DescribeAlarms",
+        ]
+        Effect   = "Allow"
+        Resource = "*"
+      },
+      {
+        Action = [
+          "logs:DescribeLogGroups",
+          "logs:ListTagsForResource",
+        ]
+        Effect   = "Allow"
+        Resource = "*"
+      },
+      {
+        Action = [
+          "sns:GetTopicAttributes",
+          "sns:ListTagsForResource",
+          "sns:ListSubscriptionsByTopic",
+          "sns:GetSubscriptionAttributes"
+        ]
+        Effect   = "Allow"
+        Resource = "*"
+      },
+    ]
+  })
+}
