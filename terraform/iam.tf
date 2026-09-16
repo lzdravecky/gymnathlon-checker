@@ -193,6 +193,7 @@ resource "aws_iam_role_policy" "terraform_plan_read" {
           "lambda:GetFunctionConfiguration",
           "lambda:GetPolicy",
           "lambda:ListTags",
+          "lambda:ListVersionsByFunction",
         ]
         Effect   = "Allow"
         Resource = "*"
@@ -232,6 +233,7 @@ resource "aws_iam_role_policy" "terraform_plan_read" {
       {
         Action = [
           "secretsmanager:DescribeSecret",
+          "secretsmanager:GetResourcePolicy",
         ]
         Effect   = "Allow"
         Resource = "*"
