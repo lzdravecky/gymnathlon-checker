@@ -1,5 +1,6 @@
 const cheerio = require('cheerio');
 const { OAuth2Client } = require('google-auth-library');
+const { setTimeout } = require('node:timers/promises');
 
 const {
     SecretsManagerClient,
@@ -55,6 +56,78 @@ const EMAIL_TO = 'lukas.zdravecky@gmail.com';
 // ========================================
 // GYMNATHLON
 // ========================================
+function sleep(ms) {
+    return setTimeout(ms);
+}
+
+function categorizeError(error, category) {
+
+    if (!error.category) {
+        error.category = category;
+    }
+
+    return error;
+}
+
+function isRetryableNetworkError(error) {
+
+    const retryableCodes = [
+        'ENOTFOUND',
+        'ETIMEDOUT',
+        'ECONNRESET'
+    ];
+
+    const errorCode = error.code || error.cause?.code;
+
+    return retryableCodes.includes(errorCode);
+}
+
+async function fetchWithRetry(url, maxAttempts = 3) {
+
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+
+        try {
+
+            const response = await fetch(url);
+
+            const retryableStatuses = [500, 502, 503, 504];
+
+            if (retryableStatuses.includes(response.status) && attempt < maxAttempts) {
+                console.warn(JSON.stringify({
+                    event: 'fetch_retry',
+                    category: 'NETWORK',
+                    attempt,
+                    maxAttempts,
+                    httpStatus: response.status,
+                    timestamp: new Date().toISOString()
+                }));
+                await sleep(2000);
+                continue;
+            }
+            return response;
+
+        } catch (error) {
+            if (!isRetryableNetworkError(error)) {
+                throw categorizeError(error, 'NETWORK');
+            }
+
+            if (attempt === maxAttempts) {
+                throw categorizeError(error, 'NETWORK');
+            }
+
+            console.warn(JSON.stringify({
+                event: 'fetch_retry',
+                category: 'NETWORK',
+                attempt,
+                maxAttempts,
+                errorCode: error.code || error.cause?.code,
+                timestamp: new Date().toISOString()
+            }));
+
+            await sleep(2000);
+        }
+    }
+}
 
 async function getCourses() {
 
@@ -62,10 +135,10 @@ async function getCourses() {
     console.log(URL);
     console.log('');
 
-    const response = await fetch(URL);
+    const response = await fetchWithRetry(URL);
 
     if (!response.ok) {
-        throw new Error(`HTTP chyba: ${response.status}`);
+        throw categorizeError(new Error(`HTTP chyba: ${response.status}`), 'NETWORK');
     }
 
     const html = await response.text();
@@ -73,7 +146,11 @@ async function getCourses() {
     console.log(`Stiahnuté HTML: ${html.length} znakov`);
     console.log('');
 
-    return parseCourses(html);
+    try {
+        return parseCourses(html);
+    } catch (error) {
+        throw categorizeError(error, 'PARSE');
+    }
 }
 
 
@@ -216,40 +293,47 @@ Nepodarilo sa nájsť žiadne Baby kurzy.
 
 async function loadState() {
 
-    const command = new GetCommand({
-        TableName: 'gymnathlon-state',
-        Key: {
-            id: 'checker-state'
+    try {
+        const command = new GetCommand({
+            TableName: 'gymnathlon-state',
+            Key: {
+                id: 'checker-state'
+            }
+        });
+
+        const response = await dynamo.send(command);
+
+        if (!response.Item) {
+
+            return {
+                alertedCourses: []
+            };
         }
-    });
-
-    const response = await dynamo.send(command);
-
-    if (!response.Item) {
 
         return {
-            alertedCourses: []
+            alertedCourses: response.Item.alertedCourses || []
         };
+    } catch (error) {
+        throw categorizeError(error, 'DYNAMODB');
     }
-
-    return {
-        alertedCourses: response.Item.alertedCourses || []
-    };
 }
 
 
 async function saveState(state) {
+    try {
+        const command = new PutCommand({
+            TableName: 'gymnathlon-state',
 
-    const command = new PutCommand({
-        TableName: 'gymnathlon-state',
+            Item: {
+                id: 'checker-state',
+                alertedCourses: state.alertedCourses
+            }
+        });
 
-        Item: {
-            id: 'checker-state',
-            alertedCourses: state.alertedCourses
-        }
-    });
-
-    await dynamo.send(command);
+        await dynamo.send(command);
+    } catch (error) {
+        throw categorizeError(error, 'DYNAMODB');
+    }
 }
 
 
@@ -286,54 +370,57 @@ async function authorizeGmail() {
 
 
 async function sendEmail(subject, body) {
+    try {
+        const auth = await authorizeGmail();
 
-    const auth = await authorizeGmail();
+        const accessTokenResponse = await auth.getAccessToken();
+        const accessToken = accessTokenResponse.token;
 
-    const accessTokenResponse = await auth.getAccessToken();
-    const accessToken = accessTokenResponse.token;
-
-    if (!accessToken) {
-        throw new Error('Nepodarilo sa ziskat Gmail access token.');
-    }
-
-    const message = [
-        'From: me',
-        `To: ${EMAIL_TO}`,
-        `Subject: ${subject}`,
-        'Content-Type: text/plain; charset="UTF-8"',
-        '',
-        body,
-    ].join('\n');
-
-    const encodedMessage = Buffer.from(message)
-        .toString('base64url');
-
-    const response = await fetch(
-        'https://gmail.googleapis.com/gmail/v1/users/me/messages/send',
-        {
-            method: 'POST',
-
-            headers: {
-                Authorization: `Bearer ${accessToken}`,
-                'Content-Type': 'application/json',
-            },
-
-            body: JSON.stringify({
-                raw: encodedMessage,
-            }),
+        if (!accessToken) {
+            throw new Error('Nepodarilo sa ziskat Gmail access token.');
         }
-    );
 
-    if (!response.ok) {
+        const message = [
+            'From: me',
+            `To: ${EMAIL_TO}`,
+            `Subject: ${subject}`,
+            'Content-Type: text/plain; charset="UTF-8"',
+            '',
+            body,
+        ].join('\n');
 
-        const errorBody = await response.text();
+        const encodedMessage = Buffer.from(message)
+            .toString('base64url');
 
-        throw new Error(
-            `Gmail API chyba ${response.status}: ${errorBody}`
+        const response = await fetch(
+            'https://gmail.googleapis.com/gmail/v1/users/me/messages/send',
+            {
+                method: 'POST',
+
+                headers: {
+                    Authorization: `Bearer ${accessToken}`,
+                    'Content-Type': 'application/json',
+                },
+
+                body: JSON.stringify({
+                    raw: encodedMessage,
+                }),
+            }
         );
-    }
 
-    console.log('✅ Email bol odoslaný!');
+        if (!response.ok) {
+
+            const errorBody = await response.text();
+
+            throw new Error(
+                `Gmail API chyba ${response.status}: ${errorBody}`
+            );
+        }
+
+        console.log('✅ Email bol odoslaný!');
+    } catch (error) {
+        throw categorizeError(error, 'GMAIL');
+    }
 }
 
 
@@ -539,7 +626,15 @@ async function main(dailyReportMode = DAILY_REPORT_MODE) {
 
     } catch (error) {
 
-        console.error('CHYBA:');
+        const category = error.category || 'UNKNOWN';
+
+        console.error(JSON.stringify({
+            event: 'checker_error',
+            category,
+            message: error.message,
+            timestamp: new Date().toISOString()
+        }));
+
         console.error(error);
 
         throw error;
