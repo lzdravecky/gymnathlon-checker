@@ -1,52 +1,159 @@
 # Gymnathlon Checker
 
-Node.js monitor for Gymnathlon course availability with email notifications.
+A production-style Node.js monitor for Gymnathlon course availability, built as a hands-on DevOps project.
 
-The application monitors Gymnathlon Baby courses in Košice and sends email notifications when course availability changes. It also send a daily status report.
+The application monitors Gymnathlon Baby courses in Košice, sends an email when course availability changes, and sends a daily status report. The current version runs serverlessly on AWS and combines application CI/CD, Infrastructure as Code, remote Terraform state, OIDC authentication, monitoring, and persistent state.
 
-## Current architecture
-
-The current production version runs serverlessly on AWS.
+## Architecture
 
 ```text
 EventBridge Scheduler
-        ↓
-      Lambda
-      /  |  \
-     /   |   \
-Gymnathlon  Secrets Manager
-   web       Gmail OAuth
-     \
-      DynamoDB
-         ↓
-   persistent state
-
-Lambda
-  ↓
-CloudWatch
-  ↓
-Alarm
-  ↓
-SNS
-  ↓
-email alert
+        |
+        v
+ Lambda alias: prod
+        |
+        v
+ Published Lambda version
+        |
+        +--> Gymnathlon web
+        +--> Secrets Manager --> Gmail OAuth
+        +--> DynamoDB --> persistent state
+        |
+        v
+ CloudWatch Logs / Metrics
+        |
+        v
+      Alarm
+        |
+        v
+       SNS
+        |
+        v
+ email notification
 ```
 
-GitHub Actions is used for CI/CD. GitHub authenticates to AWS using OIDC, without permanent AWS access keys stored in GitHub.
+The scheduled production workload targets the stable `prod` Lambda alias. Application deployments publish an immutable Lambda version and then move the alias to the newly published version.
+
+## CI/CD and Infrastructure as Code
+
+The project has two separate GitHub Actions workflows with different responsibilities:
+
+```text
+Application CI/CD
+push / pull request
+        |
+        +--> npm ci
+        +--> ESLint
+        +--> tests
+        |
+        v
+push to main
+        |
+        v
+OIDC --> AWS deploy role
+        |
+        +--> package Lambda
+        +--> deploy code
+        +--> publish Lambda version
+        +--> update prod alias
+
+
+Terraform CI
+terraform/** change or scheduled run
+        |
+        +--> terraform fmt -check
+        +--> terraform init
+        +--> terraform validate
+        +--> terraform plan -detailed-exitcode
+        |
+        v
+OIDC --> dedicated terraform-ci role
+        |
+        v
+remote S3 state
+```
+
+GitHub authenticates to AWS through OpenID Connect (OIDC), so permanent AWS access keys are not stored in GitHub. Application deployment and Terraform CI use separate least-privilege IAM roles.
+
+Terraform CI intentionally performs validation and planning only. Infrastructure changes are reviewed before they are applied.
+
+## Terraform
+
+The AWS infrastructure is represented in the `terraform/` directory and split by concern:
+
+```text
+terraform/
+├── providers.tf
+├── lambda.tf
+├── iam.tf
+├── dynamodb.tf
+├── scheduler.tf
+├── secrets.tf
+├── monitoring.tf
+└── .terraform.lock.hcl
+```
+
+Terraform manages the infrastructure and configuration around the application, including:
+
+- AWS Lambda configuration
+- IAM roles, policies, and policy attachments
+- DynamoDB state table
+- EventBridge Scheduler schedules
+- Secrets Manager secret metadata
+- CloudWatch log group and error alarm
+- SNS alerting
+- GitHub OIDC provider and CI/CD IAM roles
+
+The infrastructure originally existed in AWS and was adopted into Terraform using a brownfield import workflow. Existing resources were imported into Terraform state and the HCL configuration was reconciled until `terraform plan` reported no unintended changes.
+
+### Remote state
+
+Terraform state is stored in an encrypted S3 backend rather than in the Git repository.
+
+The backend uses:
+
+- S3 server-side encryption
+- S3 versioning for state recovery
+- public access blocking
+- native Terraform S3 state locking via `use_lockfile = true`
+
+The state file and lock file are intentionally excluded from Git.
+
+### Ownership boundary
+
+Terraform owns infrastructure and infrastructure configuration. The application deployment workflow owns Lambda application code, published versions, and the `prod` alias.
+
+This separation allows application code to be released without Terraform attempting to overwrite each deployment.
+
+## Reliability and monitoring
+
+The checker includes several reliability mechanisms:
+
+- retry for transient Gymnathlon HTTP/network failures
+- structured and categorized error logging
+- persistent alert state in DynamoDB
+- CloudWatch Logs and Lambda error metrics
+- CloudWatch alarm connected to SNS email notifications
+- EventBridge Scheduler retry policy
+
+Retries are limited to the external Gymnathlon fetch path rather than retrying the complete application flow, avoiding unnecessary repetition of side effects such as email sending or state updates.
 
 ## Tech stack
 
-- Node.js
+- Node.js 24
 - Gmail API / OAuth 2.0
+- Terraform
 - GitHub Actions
+- GitHub OIDC
 - AWS Lambda
 - Amazon EventBridge Scheduler
 - AWS Secrets Manager
 - Amazon DynamoDB
 - Amazon CloudWatch
 - Amazon SNS
-- GitHub OIDC
-- Docker / GHCR (legacy Level 2 version)
+- Amazon S3 remote Terraform state
+- IAM / least-privilege roles and policies
+- Docker / Docker Compose / GHCR (legacy Level 2 version)
 
 ## Legacy Docker version
 
@@ -74,43 +181,25 @@ gymnathlon-runtime/
 
 These files are intentionally not stored in Git.
 
-### credentials.json
+### OAuth credentials and token
 
-`credentials.json` identifies the Google OAuth application.
-
-It must be created/downloaded from the Google Cloud project containing the Gmail OAuth application.
+`credentials.json` identifies the Google OAuth application. `token.json` contains the authorization granted by a Google user to that application.
 
 Conceptually:
 
 ```text
 credentials.json
-=
-identity/configuration of the OAuth application
-```
-
-Do not commit this file to Git.
-
-### token.json
-
-`token.json` contains the authorization granted by a Google user to the OAuth application.
-
-It is created after completing the Google OAuth authorization flow.
-
-Conceptually:
-
-```text
-credentials.json
-        ↓
+        |
+        v
 OAuth authorization in browser
-        ↓
+        |
+        v
 token.json
 ```
 
-On a new computer, a new token can be generated by running the OAuth authorization flow again.
+Neither file should be committed to Git.
 
-Do not commit this file to Git.
-
-### state.json
+### Legacy state
 
 `state.json` stores the IDs of courses for which an availability alert has already been sent.
 
@@ -122,15 +211,7 @@ Example:
 }
 ```
 
-Conceptually:
-
-```text
-state.json
-=
-persistent state of the legacy checker
-```
-
-The current AWS version no longer uses this file. Persistent state is stored in DynamoDB.
+The current AWS version no longer uses this file. Persistent application state is stored in DynamoDB.
 
 ### Running the legacy Docker version
 
@@ -153,11 +234,7 @@ docker compose pull
 docker compose run --rm checker
 ```
 
-`docker compose pull` retrieves/checks the image stored in GHCR.
-
-`docker compose run --rm checker` creates a one-time container for the checker and automatically removes the container after it finishes.
-
-## Version history
+## Project evolution
 
 ```text
 Level 1
@@ -165,15 +242,31 @@ Node.js + Gmail OAuth + GitHub Actions + cron-job.org
 
 Level 2
 Docker + Docker Compose + GHCR + CI
-        ↓
-Git tag: level-2-docker
-Docker image: gymnathlon-checker:1.0
+        |
+        +--> Git tag: level-2-docker
+        +--> Docker image: gymnathlon-checker:1.0
 
 Level 3
 AWS serverless migration
-Lambda + EventBridge + Secrets Manager + DynamoDB
-CloudWatch + SNS + GitHub OIDC CI/CD
+        |
+        +--> Lambda + EventBridge Scheduler
+        +--> Secrets Manager + DynamoDB
+        +--> CloudWatch + SNS
+        +--> GitHub Actions deployment via OIDC
+        +--> published Lambda versions + prod alias
 
 Level 4
 Terraform / Infrastructure as Code
+        |
+        +--> brownfield AWS resource adoption
+        +--> remote encrypted/versioned S3 state
+        +--> native state locking
+        +--> Terraform CI via dedicated OIDC role
+        +--> least-privilege IAM
+        +--> scheduled plan/drift detection
+        +--> runtime retry and structured error handling
 ```
+
+## What this project demonstrates
+
+The project intentionally evolved from a small local automation script into a production-style cloud deployment. It demonstrates containerization, CI/CD, serverless AWS architecture, persistent cloud state, secrets handling, monitoring and alerting, IAM/OIDC, Terraform adoption of existing infrastructure, remote state management, and separation of application deployment from infrastructure management.
