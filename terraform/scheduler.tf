@@ -77,7 +77,18 @@ resource "aws_scheduler_schedule" "daily_report" {
   name       = "gymnathlon-daily-report"
   group_name = "default"
 
-  schedule_expression          = "cron(0 9 * * ? *)"
+  # STATUS REPORT FREQUENCY
+  # Keep exactly one schedule_expression active.
+  #
+  # Daily at 09:00:
+  # schedule_expression = "cron(0 9 * * ? *)"
+  #
+  # Weekly on Wednesday at 09:00 (current):
+  schedule_expression = "cron(0 9 ? * WED *)"
+  #
+  # Monthly on the 1st day at 09:00:
+  # schedule_expression = "cron(0 9 1 * ? *)"
+
   schedule_expression_timezone = "Europe/Bratislava"
   state                        = "ENABLED"
 
