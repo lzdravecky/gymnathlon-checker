@@ -17,7 +17,7 @@
     "@aws-sdk/lib-dynamodb": "^3.1127.0",
     "cheerio": "^1.2.0",
     "google-auth-library": "^11.0.2",
-    "nodemailer": "^9.1.1"
+    "nodemailer": "^10.0.10"
   },
   "devDependencies": {
     "eslint": "^10.10.0"
