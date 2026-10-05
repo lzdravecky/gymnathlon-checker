@@ -30,6 +30,8 @@ jobs:
         uses: actions/checkout@v6
 
       - uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_wrapper: false
 
       - name: configure aws credentials
         uses: aws-actions/configure-aws-credentials@v6
