@@ -62,26 +62,34 @@ jobs:
           terraform plan -detailed-exitcode
           EXIT_CODE=$?
           echo "exitcode=$EXIT_CODE" >> "$GITHUB_OUTPUT"
-          echo "Terraform exit code: $EXIT_CODE"
+          echo "Terraform CLI exit code: $TERRAFORM_EXIT_CODE"
           exit 0
 
       - name: Check Terraform Plan Result
         run: |
           EXIT_CODE="${{ steps.plan.outputs.exitcode }}"
 
-          if [ "$EXIT_CODE" -eq 1 ]; then
-            echo "::error::Terraform plan failed."
-            exit 1
-          fi
+          case "$EXIT_CODE" in
+            0)
+              echo "Terraform plan: no changes."
+              ;;
 
-          if [ "$EXIT_CODE" -eq 2 ]; then
-            if [ "${{ github.event_name }}" = "push" ]; then
-              echo "::warning::Terraform plan detected infrastructure changes after push."
-              exit 0
-            else
-              echo "::error::Terraform detected unexpected infrastructure changes."
+            1)
+              echo "::error::Terraform plan failed."
               exit 1
-            fi
-          fi
+              ;;
 
-          echo "Terraform plan: no changes."
+            2)
+              if [ "${{ github.event_name }}" = "push" ]; then
+                echo "::warning::Terraform plan detected infrastructure changes after push."
+              else
+                echo "::error::Terraform detected unexpected infrastructure changes."
+                exit 1
+              fi
+              ;;
+
+            *)
+              echo "::error::Unexpected Terraform exit code: $EXIT_CODE"
+              exit 1
+              ;;
+          esac
