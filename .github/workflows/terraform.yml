@@ -62,7 +62,7 @@ jobs:
           terraform plan -detailed-exitcode
           TERRAFORM_EXIT_CODE=$?
 
-          echo "exitcode=$EXIT_CODE" >> "$GITHUB_OUTPUT"
+          echo "exitcode=$TERRAFORM_EXIT_CODE" >> "$GITHUB_OUTPUT"
           echo "Terraform CLI exit code: $TERRAFORM_EXIT_CODE"
           exit 0
 
