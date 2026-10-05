@@ -61,16 +61,16 @@ jobs:
           set +e
           terraform plan -detailed-exitcode
           TERRAFORM_EXIT_CODE=$?
-          
+
           echo "exitcode=$EXIT_CODE" >> "$GITHUB_OUTPUT"
           echo "Terraform CLI exit code: $TERRAFORM_EXIT_CODE"
           exit 0
 
       - name: Check Terraform Plan Result
         run: |
-          EXIT_CODE="${{ steps.plan.outputs.exitcode }}"
+          TERRAFORM_EXIT_CODE="${{ steps.plan.outputs.exitcode }}"
 
-          case "$EXIT_CODE" in
+          case "$TERRAFORM_EXIT_CODE" in
             0)
               echo "Terraform plan: no changes."
               ;;
@@ -90,7 +90,7 @@ jobs:
               ;;
 
             *)
-              echo "::error::Unexpected Terraform exit code: $EXIT_CODE"
+              echo "::error::Unexpected Terraform CLI exit code: $TERRAFORM_EXIT_CODE"
               exit 1
               ;;
           esac
